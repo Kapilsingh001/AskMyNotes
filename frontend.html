@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#8b5cf6" />
+<link rel="manifest" href="/manifest.json" />
+<title>AskMyNotes — AI Study Assistant</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --accent:#8b5cf6; --accent2:#6d28d9;
+          --text:#e2e8f0; --muted:#94a3b8; --border:#334155; --ok:#22c55e; --bad:#ef4444; --warn:#f59e0b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:20px; text-align:center; border-bottom:1px solid var(--border); }
+  header h1 { margin:0 0 4px; } header p { margin:0; color:var(--muted); font-size:14px; }
+  .wrap { max-width:860px; margin:18px auto; padding:0 16px 60px; }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px; }
+  .tab { padding:9px 14px; background:var(--card); border:1px solid var(--border); border-radius:10px;
+    color:var(--muted); cursor:pointer; font-weight:600; font-size:14px; }
+  .tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:16px; }
+  .card h2 { margin:0 0 4px; font-size:16px; } .hint { color:var(--muted); font-size:12px; margin:0 0 12px; }
+  label { font-size:12px; color:var(--muted); display:block; margin:10px 0 4px; }
+  input[type=text], input[type=file], input[type=number], select, textarea { width:100%; padding:10px 12px;
+    background:#0b1220; border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; }
+  textarea { min-height:80px; resize:vertical; font-family:inherit; }
+  button { margin-top:12px; padding:10px 16px; background:var(--accent); color:#fff; border:none;
+    border-radius:8px; font-weight:600; cursor:pointer; } button:hover { background:var(--accent2); }
+  button.ghost { background:transparent; border:1px solid var(--border); color:var(--text); }
+  button.sm { padding:6px 10px; font-size:12px; margin-top:0; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .row > div { flex:1; min-width:160px; }
+  #answer { white-space:pre-wrap; line-height:1.6; }
+  .source { background:#0b1220; border:1px solid var(--border); border-radius:8px; padding:10px 12px;
+    margin-top:8px; font-size:13px; color:var(--muted); }
+  .cite { color:var(--accent); font-weight:600; }
+  .badge { display:inline-block; background:var(--accent2); color:#fff; font-size:11px; padding:2px 8px;
+    border-radius:999px; margin:0 6px 6px 0; }
+  #status { font-size:13px; color:var(--ok); margin-top:8px; min-height:18px; }
+  .spinner { color:var(--muted); }
+  .hidden { display:none; }
+  .doc { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .doc:last-child { border-bottom:none; }
+  .doc small { color:var(--muted); }
+  .opt { display:block; width:100%; text-align:left; background:#0b1220; border:1px solid var(--border);
+    color:var(--text); border-radius:8px; padding:10px 12px; margin-top:8px; cursor:pointer; }
+  .opt.correct { border-color:var(--ok); background:rgba(34,197,94,.12); }
+  .opt.wrong { border-color:var(--bad); background:rgba(239,68,68,.12); }
+  .q { margin-bottom:18px; }
+  .flip { min-height:90px; display:flex; align-items:center; justify-content:center; text-align:center;
+    font-size:17px; padding:16px; }
+  .rate { display:flex; gap:6px; flex-wrap:wrap; }
+  .rate button { flex:1; min-width:44px; }
+  .md { line-height:1.6; } .md strong { color:#fff; }
+  .bubble { padding:10px 14px; border-radius:12px; margin:8px 0; max-width:88%; line-height:1.55; }
+  .bubble.me { background:var(--accent2); color:#fff; margin-left:auto; border-bottom-right-radius:3px; }
+  .bubble.ai { background:#0b1220; border:1px solid var(--border); border-bottom-left-radius:3px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧠 AskMyNotes</h1>
+  <p>Your notes → cited answers, quizzes, flashcards & active recall. Grounded only in YOUR material.</p>
+</header>
+
+<!-- AUTH GATE -->
+<div class="wrap" id="authScreen" style="max-width:420px">
+  <div class="card">
+    <h2 id="authTitle">Log in</h2>
+    <p class="hint" id="authHint">Log in to your private notes, or create an account.</p>
+    <label>Email</label><input id="authEmail" type="text" placeholder="you@example.com" />
+    <label>Password</label><input id="authPass" type="password" placeholder="••••••" onkeydown="if(event.key==='Enter')submitAuth()" />
+    <button onclick="submitAuth()" id="authBtn">Log in</button>
+    <div id="authMsg" style="font-size:13px;margin-top:10px;min-height:18px;color:var(--bad)"></div>
+    <p class="hint" style="margin-top:12px">
+      <span id="authSwitchText">No account?</span>
+      <a href="#" onclick="toggleAuthMode();return false" style="color:var(--accent)" id="authSwitch">Create one</a>
+    </p>
+  </div>
+</div>
+
+<div class="wrap hidden" id="appWrap">
+  <!-- signed-in bar -->
+  <div class="card" style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px">
+    <span class="hint" style="margin:0">Signed in as <b id="userEmail"></b></span>
+    <button class="ghost sm" onclick="logout()">Log out</button>
+  </div>
+  <!-- scope selector shared by every tab -->
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>Subject</label>
+        <select id="subjectSel" onchange="loadDocs()"><option value="">All subjects</option></select>
+      </div>
+      <div>
+        <label>Document</label>
+        <select id="docSel"><option value="">All documents in scope</option></select>
+      </div>
+      <div style="flex:0">
+        <button class="ghost sm" onclick="refreshAll()">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="hint" id="keyNote" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="library" onclick="showTab('library')">📚 Library</div>
+    <div class="tab" data-tab="ask" onclick="showTab('ask')">💬 Ask</div>
+    <div class="tab" data-tab="quiz" onclick="showTab('quiz')">🎯 Quiz</div>
+    <div class="tab" data-tab="cards" onclick="showTab('cards')">🃏 Flashcards</div>
+    <div class="tab" data-tab="test" onclick="showTab('test')">📝 Test Me</div>
+    <div class="tab" data-tab="progress" onclick="showTab('progress')">📊 Progress</div>
+  </div>
+
+  <!-- PROGRESS -->
+  <section id="progress" class="hidden">
+    <div class="card">
+      <h2>Your progress
+        <button class="ghost sm" onclick="enableReminders()" style="float:right">🔔 Enable reminders</button></h2>
+      <p class="hint">Review flashcards daily to build your streak. Spaced repetition rewards consistency.</p>
+      <div id="statsGrid" style="display:flex;gap:10px;flex-wrap:wrap"></div>
+      <div style="margin-top:18px">
+        <p class="hint" style="margin-bottom:6px">Reviews — last 7 days</p>
+        <div id="statsBars" style="display:flex;gap:6px;align-items:flex-end;height:90px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LIBRARY -->
+  <section id="library">
+    <div class="card">
+      <h2>Add notes</h2>
+      <p class="hint">Upload a <b>PDF / DOCX / TXT</b> (scanned pages are OCR'd) or paste text.
+        After adding, a cheat-sheet + flashcards are generated automatically.</p>
+      <div class="row">
+        <div><label>File</label><input id="pdf" type="file" accept=".pdf,.docx,.txt" /></div>
+        <div><label>Subject (folder)</label><input id="subjectIn" type="text" placeholder="e.g. Operating Systems" /></div>
+      </div>
+      <button onclick="upload()">Upload &amp; process</button>
+
+      <details style="margin-top:14px">
+        <summary class="hint" style="cursor:pointer">…or paste text instead</summary>
+        <label>Title</label><input id="pasteTitle" type="text" placeholder="e.g. Chapter 3 notes" />
+        <label>Text</label><textarea id="pasteText" placeholder="Paste your notes here…"></textarea>
+        <button class="ghost" onclick="pasteNotes()">Add pasted text</button>
+      </details>
+      <div id="status"></div>
+    </div>
+    <div class="card">
+      <h2>Your library</h2>
+      <p class="hint">Everything you've uploaded. Make a cheat-sheet or flashcards per document.</p>
+      <div id="docList" class="hint">Loading…</div>
+    </div>
+    <div class="card hidden" id="summaryCard">
+      <h2>📄 Cheat-sheet
+        <button class="ghost sm" id="speakBtn" onclick="toggleSpeak()" style="float:right">🔊 Listen</button></h2>
+      <div id="summaryBody" class="md"></div>
+    </div>
+  </section>
+
+  <!-- ASK (chat) -->
+  <section id="ask" class="hidden">
+    <div class="card">
+      <h2>Chat with your notes</h2>
+      <p class="hint">Scoped by the Subject/Document above. Answers cite the page. Ask follow-ups —
+        it remembers the conversation. <a href="#" onclick="clearChat();return false" style="color:var(--accent)">Clear</a></p>
+      <div id="chatThread"></div>
+      <div class="row" style="margin-top:12px">
+        <div style="flex:1"><input id="question" type="text" placeholder="e.g. Compare how lecture 3 and lecture 9 define a process"
+          onkeydown="if(event.key==='Enter')ask()" /></div>
+        <div style="flex:0;align-self:flex-end"><button onclick="ask()">Send</button></div>
+      </div>
+      <div id="sources"></div>
+    </div>
+  </section>
+
+  <!-- QUIZ -->
+  <section id="quiz" class="hidden">
+    <div class="card">
+      <h2>Generate a quiz</h2>
+      <p class="hint">Multiple-choice questions built only from the selected notes.</p>
+      <div class="row">
+        <div style="flex:0"><label># questions</label><input id="quizNum" type="number" value="5" min="1" max="15" style="width:90px"/></div>
+        <div style="flex:0;align-self:flex-end"><button onclick="makeQuiz()">Generate quiz</button></div>
+      </div>
+      <div id="quizScore" class="badge hidden"></div>
+      <div id="quizBody"></div>
+    </div>
+  </section>
+
+  <!-- FLASHCARDS -->
+  <section id="cards" class="hidden">
+    <div class="card">
+      <h2>Flashcards &amp; spaced repetition</h2>
+      <p class="hint">Generate cards from a document (pick one above), then review what's due today.
+        Rating a card schedules when you'll see it next. Regenerating replaces that document's cards
+        (no duplicates).</p>
+      <div class="row">
+        <div style="flex:0"><label># cards</label><input id="cardNum" type="number" value="10" min="1" max="30" style="width:90px"/></div>
+        <div style="flex:0"><label>Review difficulty</label>
+          <select id="reviewDiff"><option value="">All</option><option>Easy</option><option>Medium</option><option>Hard</option></select></div>
+        <div style="flex:0;align-self:flex-end"><button onclick="makeCards()">Make cards</button></div>
+        <div style="flex:0;align-self:flex-end"><button class="ghost" onclick="startReview()">Review due →</button></div>
+        <div style="flex:0;align-self:flex-end"><button class="ghost" onclick="exportCards()">⬇ Export CSV</button></div>
+      </div>
+      <div id="cardStatus" class="hint" style="margin-top:8px"></div>
+    </div>
+    <div class="card hidden" id="reviewCard">
+      <div><span class="badge" id="reviewCount"></span><span id="cardMeta"></span></div>
+      <div class="md" id="cardQuestion" style="font-size:16px;margin:14px 0;"></div>
+      <textarea id="cardAttempt" placeholder="Type your answer (optional), then reveal to compare…"></textarea>
+      <div id="hintRow" class="hidden" style="margin-top:8px">
+        <button class="ghost sm" id="hintBtn" onclick="showHint()">💡 Hint</button>
+        <span id="hintText" class="hint"></span>
+      </div>
+      <div id="cardAnswer" class="source hidden" style="margin-top:12px"></div>
+      <button id="flipBtn" onclick="flipCard()">Show answer</button>
+      <div id="rateRow" class="hidden">
+        <p class="hint" style="margin-top:14px">How well did you recall it?</p>
+        <div class="rate">
+          <button style="background:#ef4444" onclick="rate(0)">0 Blank</button>
+          <button style="background:#f59e0b" onclick="rate(2)">2 Wrong</button>
+          <button style="background:#eab308" onclick="rate(3)">3 Hard</button>
+          <button style="background:#84cc16" onclick="rate(4)">4 Good</button>
+          <button style="background:#22c55e" onclick="rate(5)">5 Easy</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TEST ME -->
+  <section id="test" class="hidden">
+    <div class="card">
+      <h2>Test me (active recall)</h2>
+      <p class="hint">Get an open question from your notes, answer it, and get graded against them.</p>
+      <button onclick="getQuestion()">Give me a question</button>
+      <div id="testQ" class="card hidden" style="margin-top:14px;background:#0b1220">
+        <div id="testQText" style="font-weight:600"></div>
+        <textarea id="testAnswer" placeholder="Type your answer…"></textarea>
+        <button onclick="gradeAnswer()">Submit for grading</button>
+      </div>
+      <div id="testResult"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const API = "";
+let hasKey = false;
+let review = { queue: [], current: null };
+let authMode = "login";   // or "register"
+
+// ---------- auth ----------
+function token() { return localStorage.getItem("amn_token"); }
+
+// wrapper that attaches the Bearer token and bounces to login on 401
+async function authFetch(url, opts = {}) {
+  opts.headers = Object.assign({}, opts.headers, { Authorization: "Bearer " + token() });
+  const res = await fetch(url, opts);
+  if (res.status === 401) { logout(); throw new Error("Session expired"); }
+  return res;
+}
+
+function toggleAuthMode() {
+  authMode = authMode === "login" ? "register" : "login";
+  const login = authMode === "login";
+  document.getElementById("authTitle").textContent = login ? "Log in" : "Create account";
+  document.getElementById("authBtn").textContent = login ? "Log in" : "Create account";
+  document.getElementById("authSwitchText").textContent = login ? "No account?" : "Already have one?";
+  document.getElementById("authSwitch").textContent = login ? "Create one" : "Log in";
+  document.getElementById("authMsg").textContent = "";
+}
+
+async function submitAuth() {
+  const email = document.getElementById("authEmail").value.trim();
+  const password = document.getElementById("authPass").value;
+  const msg = document.getElementById("authMsg");
+  if (!email || !password) { msg.textContent = "Enter email and password."; return; }
+  msg.style.color = "var(--muted)"; msg.textContent = "…";
+  try {
+    const res = await fetch(API + "/auth/" + (authMode === "login" ? "login" : "register"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }) });
+    const d = await res.json();
+    if (!res.ok) { msg.style.color = "var(--bad)"; msg.textContent = "❌ " + (d.detail || "Failed"); return; }
+    localStorage.setItem("amn_token", d.token);
+    localStorage.setItem("amn_email", d.email);
+    showApp();
+  } catch (e) { msg.style.color = "var(--bad)"; msg.textContent = "❌ Network error: " + e; }
+}
+
+function logout() {
+  localStorage.removeItem("amn_token");
+  localStorage.removeItem("amn_email");
+  document.getElementById("appWrap").classList.add("hidden");
+  document.getElementById("authScreen").classList.remove("hidden");
+}
+
+function showApp() {
+  document.getElementById("authScreen").classList.add("hidden");
+  document.getElementById("appWrap").classList.remove("hidden");
+  document.getElementById("userEmail").textContent = localStorage.getItem("amn_email") || "";
+  refreshAll();
+  detectKey();
+  checkReminders(false);   // nudge if cards are due (only if the user enabled notifications)
+}
+
+// ---------- scope helpers ----------
+function scopeBody(extra = {}) {
+  const doc = document.getElementById("docSel").value;
+  const subj = document.getElementById("subjectSel").value;
+  const body = { ...extra };
+  if (doc) body.document_id = parseInt(doc);
+  else if (subj) body.subject = subj;
+  return body;
+}
+function scopeQuery() {
+  const subj = document.getElementById("subjectSel").value;
+  return subj ? "?subject=" + encodeURIComponent(subj) : "";
+}
+
+// ---------- tabs ----------
+function showTab(name) {
+  document.querySelectorAll(".tabs .tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.tab === name));
+  ["library","ask","quiz","cards","test","progress"].forEach(s =>
+    document.getElementById(s).classList.toggle("hidden", s !== name));
+  if (name === "progress") loadStats();
+}
+
+// ---------- boot ----------
+async function refreshAll() { await loadSubjects(); await loadDocs(); await loadLibrary(); await checkKey(); }
+async function checkKey() {
+  // infer key presence from a cheap probe: /ask needs no key; instead we just show a note.
+  const note = document.getElementById("keyNote");
+  note.innerHTML = hasKey
+    ? "✅ AI features enabled."
+    : "ℹ️ No API key detected — <b>Ask</b> shows retrieved chunks; Quiz/Flashcards/Test-Me need a GROQ/GEMINI/ANTHROPIC key in <code>.env</code>.";
+}
+
+async function loadSubjects() {
+  const res = await authFetch(API + "/subjects"); const subs = await res.json();
+  const sel = document.getElementById("subjectSel");
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All subjects</option>' +
+    subs.map(s => `<option value="${s.subject}">${s.subject} (${s.documents})</option>`).join("");
+  sel.value = cur;
+}
+async function loadDocs() {
+  const res = await authFetch(API + "/documents"); let docs = await res.json();
+  const subj = document.getElementById("subjectSel").value;
+  if (subj) docs = docs.filter(d => d.subject === subj);
+  const sel = document.getElementById("docSel");
+  sel.innerHTML = '<option value="">All documents in scope</option>' +
+    docs.map(d => `<option value="${d.id}">${d.filename}</option>`).join("");
+}
+async function loadLibrary() {
+  const res = await authFetch(API + "/documents"); const docs = await res.json();
+  const el = document.getElementById("docList");
+  if (!docs.length) { el.innerHTML = "No documents yet — upload one above."; return; }
+  el.innerHTML = docs.map(d => `
+    <div class="doc">
+      <div><b>${d.filename}</b><br><small>${d.subject} · ${d.chunks} chunks · ${d.flashcards} cards${d.share_token ? ' · <span class="cite">shared</span>' : ''}</small>
+        ${d.share_token ? `<div class="hint" style="margin-top:4px">🔗 <a href="/s/${d.share_token}" target="_blank" style="color:var(--accent)">${location.origin}/s/${d.share_token}</a>
+          <button class="sm ghost" onclick="copyLink('${d.share_token}')">Copy</button></div>` : ''}
+      </div>
+      <div>
+        <button class="sm ghost" onclick="cheatSheet(${d.id})">Cheat-sheet</button>
+        <button class="sm ghost" onclick="shareDeck(${d.id}, ${d.share_token ? 'true' : 'false'})">${d.share_token ? 'Unshare' : 'Share'}</button>
+        <button class="sm" onclick="quickCards(${d.id})">Make cards</button>
+      </div>
+    </div>`).join("");
+}
+async function shareDeck(id, isShared) {
+  try {
+    if (isShared) { await authFetch(API + `/documents/${id}/share`, { method:"DELETE" }); }
+    else {
+      const res = await authFetch(API + `/documents/${id}/share`, { method:"POST" });
+      const d = await res.json();
+      copyLink(d.share_token, true);
+    }
+    loadLibrary();
+  } catch (e) { alert("Could not update sharing: " + e); }
+}
+function copyLink(token, announce) {
+  const url = location.origin + "/s/" + token;
+  navigator.clipboard?.writeText(url);
+  if (announce) alert("Public link copied!\n\n" + url + "\n\nAnyone with this link can study these flashcards (read-only).");
+}
+
+// ---------- upload ----------
+async function upload() {
+  const fi = document.getElementById("pdf"), status = document.getElementById("status");
+  if (!fi.files.length) { status.textContent = "Pick a file first."; return; }
+  status.textContent = "Uploading & embedding… (scanned pages are OCR'd, can take a bit)";
+  const form = new FormData();
+  form.append("file", fi.files[0]);
+  form.append("subject", document.getElementById("subjectIn").value || "General");
+  try {
+    const res = await authFetch(API + "/upload", { method:"POST", body:form });
+    const d = await res.json();
+    if (res.ok) { status.textContent = `✅ "${d.filename}" → ${d.chunks_created} chunks in "${d.subject}".`;
+      await refreshAll(); autoGenerate(d.document_id); }
+    else status.textContent = "❌ " + (d.detail || "Upload failed");
+  } catch (e) { status.textContent = "❌ Network error: " + e; }
+}
+async function pasteNotes() {
+  const status = document.getElementById("status");
+  const title = document.getElementById("pasteTitle").value;
+  const text = document.getElementById("pasteText").value;
+  if (!text.trim()) { status.textContent = "Paste some text first."; return; }
+  status.textContent = "Adding pasted text & embedding…";
+  try {
+    const res = await authFetch(API + "/upload-text", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ title, text, subject: document.getElementById("subjectIn").value || "General" }) });
+    const d = await res.json();
+    if (res.ok) { status.textContent = `✅ "${d.filename}" → ${d.chunks_created} chunks.`;
+      document.getElementById("pasteText").value = ""; await refreshAll(); autoGenerate(d.document_id); }
+    else status.textContent = "❌ " + (d.detail || "Failed");
+  } catch (e) { status.textContent = "❌ Network error: " + e; }
+}
+// after adding a doc, auto-build a cheat-sheet + starter flashcards (needs a key; ignored otherwise)
+async function autoGenerate(docId) {
+  if (!hasKey) return;
+  const status = document.getElementById("status");
+  status.textContent += "  ✨ Generating cheat-sheet + flashcards…";
+  try {
+    await authFetch(API + "/flashcards/generate", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ document_id: docId, num: 10 }) });
+    await authFetch(API + "/summary", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ document_id: docId }) });
+    status.textContent = status.textContent.replace("Generating", "Generated") ;
+    await refreshAll();
+  } catch (e) { /* non-fatal */ }
+}
+
+// ---------- ask ----------
+function renderCitations(text) {
+  const safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  return safe.replace(/\(([^()]*?(?:\.pdf|\.docx|\.txt|p\.\d)[^()]*?)\)/gi,
+    '<span class="cite">($1)</span>').replace(/\n/g, "<br>");
+}
+let chatHistory = [];
+function addBubble(who, html) {
+  const thread = document.getElementById("chatThread");
+  const div = document.createElement("div");
+  div.className = "bubble " + (who === "me" ? "me" : "ai");
+  div.innerHTML = html;
+  thread.appendChild(div);
+  div.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  return div;
+}
+function clearChat() {
+  chatHistory = [];
+  document.getElementById("chatThread").innerHTML = "";
+  document.getElementById("sources").innerHTML = "";
+}
+async function ask() {
+  const input = document.getElementById("question");
+  const q = input.value; const s = document.getElementById("sources");
+  if (!q.trim()) return;
+  addBubble("me", q.replace(/</g, "&lt;"));
+  input.value = "";
+  const thinking = addBubble("ai", '<span class="spinner">🤔 Thinking…</span>');
+  s.innerHTML = "";
+  try {
+    const res = await authFetch(API + "/chat", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(scopeBody({ question:q, history: chatHistory })) });
+    const d = await res.json();
+    if (!res.ok) { thinking.innerHTML = "❌ " + (d.detail || "Error"); return; }
+    thinking.innerHTML = renderCitations(d.answer);
+    chatHistory.push({ role:"user", content:q }, { role:"assistant", content:d.answer });
+    if (d.sources && d.sources.length) {
+      s.innerHTML = '<div class="badge">Sources (with pages)</div>';
+      d.sources.forEach((src, i) => {
+        const div = document.createElement("div"); div.className = "source";
+        const where = `${src.filename}${src.page ? ", p." + src.page : ""}`;
+        div.innerHTML = `<span class="cite">#${i+1} · ${where}</span><br>${src.content.slice(0,280)}${src.content.length>280?"…":""}`;
+        s.appendChild(div);
+      });
+    }
+  } catch (e) { thinking.innerHTML = "❌ Network error: " + e; }
+}
+
+// ---------- quiz ----------
+async function makeQuiz() {
+  const body = document.getElementById("quizBody"), score = document.getElementById("quizScore");
+  score.classList.add("hidden");
+  body.innerHTML = '<span class="spinner">✍️ Writing questions…</span>';
+  try {
+    const res = await authFetch(API + "/quiz", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(scopeBody({ num: parseInt(document.getElementById("quizNum").value) })) });
+    const d = await res.json();
+    if (!res.ok) { body.innerHTML = "❌ " + (d.detail || "Error"); return; }
+    renderQuiz(d.questions);
+  } catch (e) { body.innerHTML = "❌ Network error: " + e; }
+}
+function renderQuiz(questions) {
+  const body = document.getElementById("quizBody"); body.innerHTML = "";
+  let answered = 0, correct = 0;
+  questions.forEach((q, qi) => {
+    const wrap = document.createElement("div"); wrap.className = "q";
+    wrap.innerHTML = `<b>${qi+1}. ${q.question}</b>`;
+    q.options.forEach((opt, oi) => {
+      const b = document.createElement("button"); b.className = "opt"; b.textContent = opt;
+      b.onclick = () => {
+        if (wrap.dataset.done) return;
+        wrap.dataset.done = "1"; answered++;
+        const right = oi === q.answer_index;
+        if (right) correct++;
+        b.classList.add(right ? "correct" : "wrong");
+        if (!right) wrap.querySelectorAll(".opt")[q.answer_index].classList.add("correct");
+        const exp = document.createElement("div"); exp.className = "source";
+        exp.innerHTML = (right ? "✅ Correct. " : "❌ ") + (q.explanation || "");
+        wrap.appendChild(exp);
+        const sc = document.getElementById("quizScore");
+        sc.classList.remove("hidden"); sc.textContent = `Score: ${correct}/${answered}`;
+      };
+      wrap.appendChild(b);
+    });
+    body.appendChild(wrap);
+  });
+}
+
+// ---------- flashcards ----------
+async function makeCards() {
+  const doc = document.getElementById("docSel").value;
+  if (!doc) { document.getElementById("cardStatus").textContent = "Pick a specific Document above first."; return; }
+  quickCards(parseInt(doc));
+}
+async function quickCards(docId) {
+  const st = document.getElementById("cardStatus");
+  st.textContent = "🃏 Generating flashcards…";
+  try {
+    const res = await authFetch(API + "/flashcards/generate", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ document_id: docId, num: parseInt(document.getElementById("cardNum").value||10) }) });
+    const d = await res.json();
+    st.textContent = res.ok ? `✅ ${d.created} cards ready (replaced any old ones). Click "Review due →".` : "❌ " + (d.detail||"Error");
+    refreshAll();
+  } catch (e) { st.textContent = "❌ Network error: " + e; }
+}
+async function startReview() {
+  const subj = document.getElementById("subjectSel").value;
+  const diff = document.getElementById("reviewDiff").value;
+  const params = new URLSearchParams();
+  if (subj) params.set("subject", subj);
+  if (diff) params.set("difficulty", diff);
+  const qs = params.toString() ? "?" + params.toString() : "";
+  const res = await authFetch(API + "/flashcards/due" + qs);
+  review.queue = await res.json();
+  if (!review.queue.length) { document.getElementById("cardStatus").textContent = "🎉 Nothing due in that filter!"; return; }
+  document.getElementById("reviewCard").classList.remove("hidden");
+  nextCard();
+}
+async function exportCards() {
+  const doc = document.getElementById("docSel").value;
+  const subj = document.getElementById("subjectSel").value;
+  const params = new URLSearchParams();
+  if (doc) params.set("document_id", doc);
+  else if (subj) params.set("subject", subj);
+  const res = await authFetch(API + "/flashcards/export?" + params.toString());
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "askmynotes_flashcards.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function nextCard() {
+  if (!review.queue.length) {
+    document.getElementById("reviewCard").classList.add("hidden");
+    document.getElementById("cardStatus").textContent = "🎉 Review complete!";
+    return;
+  }
+  review.current = review.queue.shift();
+  document.getElementById("reviewCount").textContent = `${review.queue.length + 1} left`;
+  document.getElementById("cardMeta").innerHTML = cardMeta(review.current);
+  document.getElementById("cardQuestion").innerHTML = mdLite(review.current.front);
+  const at = document.getElementById("cardAttempt");
+  at.value = ""; at.classList.remove("hidden");
+  document.getElementById("cardAnswer").classList.add("hidden");
+  document.getElementById("flipBtn").classList.remove("hidden");
+  document.getElementById("rateRow").classList.add("hidden");
+  // optional hint
+  const hr = document.getElementById("hintRow");
+  if (review.current.hint) {
+    hr.classList.remove("hidden");
+    document.getElementById("hintBtn").classList.remove("hidden");
+    document.getElementById("hintText").textContent = "";
+  } else { hr.classList.add("hidden"); }
+}
+function cardMeta(c) {
+  const colors = { Easy:"#22c55e", Medium:"#f59e0b", Hard:"#ef4444" };
+  let html = "";
+  if (c.topic) html += `<span class="badge">${c.topic}</span>`;
+  if (c.difficulty) html += `<span class="badge" style="background:${colors[c.difficulty]||'#6d28d9'}">${c.difficulty}</span>`;
+  if (c.est_time) html += `<span class="badge" style="background:#334155">~${c.est_time}s</span>`;
+  return html;
+}
+function showHint() {
+  document.getElementById("hintText").textContent = " " + (review.current.hint || "");
+  document.getElementById("hintBtn").classList.add("hidden");
+}
+function flipCard() {
+  const c = review.current;
+  let h = '<span class="cite">Answer</span><br>' + mdLite(c.back);
+  if (c.explanation) h += '<br><br><span class="cite">Why</span><br>' + mdLite(c.explanation);
+  if (c.source_page) h += `<br><br><span class="hint">📄 page ${c.source_page}</span>`;
+  const ans = document.getElementById("cardAnswer");
+  ans.innerHTML = h;
+  ans.classList.remove("hidden");
+  document.getElementById("cardAttempt").classList.add("hidden");
+  document.getElementById("hintRow").classList.add("hidden");
+  document.getElementById("flipBtn").classList.add("hidden");
+  document.getElementById("rateRow").classList.remove("hidden");
+}
+async function rate(q) {
+  await authFetch(API + `/flashcards/${review.current.id}/review`, { method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({ quality:q }) });
+  nextCard();
+}
+
+// ---------- test me ----------
+async function getQuestion() {
+  const box = document.getElementById("testQ"), res2 = document.getElementById("testResult");
+  res2.innerHTML = ""; box.classList.add("hidden");
+  try {
+    const res = await authFetch(API + "/testme", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(scopeBody()) });
+    const d = await res.json();
+    if (!res.ok) { res2.innerHTML = '<div class="source">❌ ' + (d.detail||"Error") + '</div>'; return; }
+    document.getElementById("testQText").textContent = d.question;
+    document.getElementById("testAnswer").value = "";
+    box.classList.remove("hidden");
+    box.dataset.q = d.question;
+  } catch (e) { res2.innerHTML = "❌ Network error: " + e; }
+}
+async function gradeAnswer() {
+  const q = document.getElementById("testQ").dataset.q;
+  const ans = document.getElementById("testAnswer").value;
+  const res2 = document.getElementById("testResult");
+  if (!ans.trim()) { res2.innerHTML = '<div class="source">Type an answer first.</div>'; return; }
+  res2.innerHTML = '<div class="source spinner">📝 Grading…</div>';
+  try {
+    const res = await authFetch(API + "/grade", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(scopeBody({ question:q, answer:ans })) });
+    const d = await res.json();
+    if (!res.ok) { res2.innerHTML = '<div class="source">❌ ' + (d.detail||"Error") + '</div>'; return; }
+    const color = d.verdict === "correct" ? "var(--ok)" : d.verdict === "incorrect" ? "var(--bad)" : "var(--warn)";
+    res2.innerHTML = `<div class="card" style="margin-top:14px;background:#0b1220">
+      <div class="badge" style="background:${color}">${d.verdict} · ${d.score}/5</div>
+      <p>${d.feedback}</p>
+      <p class="hint">Ideal answer</p><div class="md">${d.ideal_answer}</div>
+    </div>`;
+  } catch (e) { res2.innerHTML = "❌ Network error: " + e; }
+}
+
+// ---------- progress dashboard ----------
+async function loadStats() {
+  const grid = document.getElementById("statsGrid");
+  grid.innerHTML = '<span class="spinner">Loading…</span>';
+  try {
+    const res = await authFetch(API + "/stats");
+    const d = await res.json();
+    const stat = (label, val, sub) => `
+      <div class="card" style="flex:1;min-width:120px;margin:0;text-align:center">
+        <div style="font-size:26px;font-weight:700">${val}</div>
+        <div class="hint" style="margin:2px 0 0">${label}</div>
+        ${sub ? `<div class="hint" style="margin:0">${sub}</div>` : ""}
+      </div>`;
+    grid.innerHTML =
+      stat("🔥 Day streak", d.streak) +
+      stat("Due today", d.due_today) +
+      stat("Cards mastered", d.mastered, `of ${d.total_cards}`) +
+      stat("Reviews today", d.reviews_today) +
+      stat("7-day accuracy", d.accuracy_7d == null ? "—" : d.accuracy_7d + "%") +
+      stat("Documents", d.documents);
+
+    const max = Math.max(1, ...d.last7.map(x => x.count));
+    document.getElementById("statsBars").innerHTML = d.last7.map(x => {
+      const h = Math.round((x.count / max) * 80) + 4;
+      const day = new Date(x.day + "T00:00").toLocaleDateString(undefined, { weekday: "short" });
+      return `<div style="flex:1;text-align:center">
+        <div title="${x.count} reviews" style="height:${h}px;background:var(--accent);border-radius:4px 4px 0 0"></div>
+        <div class="hint" style="margin:4px 0 0;font-size:10px">${day}</div>
+        <div class="hint" style="margin:0;font-size:10px">${x.count}</div></div>`;
+    }).join("");
+  } catch (e) { grid.innerHTML = "❌ " + e; }
+}
+
+// ---------- cheat-sheet ----------
+async function cheatSheet(docId) {
+  const card = document.getElementById("summaryCard"), body = document.getElementById("summaryBody");
+  card.classList.remove("hidden"); body.innerHTML = '<span class="spinner">📄 Building cheat-sheet…</span>';
+  card.scrollIntoView({ behavior:"smooth" });
+  try {
+    const res = await authFetch(API + "/summary", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ document_id: docId }) });
+    const d = await res.json();
+    body.innerHTML = res.ok ? mdLite(d.summary) : "❌ " + (d.detail||"Error");
+  } catch (e) { body.innerHTML = "❌ Network error: " + e; }
+}
+// ---------- audio overview (free browser text-to-speech) ----------
+let speaking = false;
+if ("speechSynthesis" in window) speechSynthesis.getVoices();   // warm up the voice list
+function toggleSpeak() {
+  const btn = document.getElementById("speakBtn");
+  if (!("speechSynthesis" in window)) { alert("This browser can't read text aloud."); return; }
+  if (speaking || speechSynthesis.speaking) {
+    speechSynthesis.cancel(); speaking = false; btn.textContent = "🔊 Listen"; return;
+  }
+  const body = document.getElementById("summaryBody");
+  const text = (body ? body.innerText : "").trim();
+  if (!text || text.length < 3) {
+    alert("Generate a cheat-sheet first: Library → click Cheat-sheet on a document, then press 🔊 Listen.");
+    return;
+  }
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.0; u.lang = "en-US";
+  const v = speechSynthesis.getVoices().find(x => x.lang && x.lang.startsWith("en"));
+  if (v) u.voice = v;
+  u.onend = () => { speaking = false; btn.textContent = "🔊 Listen"; };
+  u.onerror = () => { speaking = false; btn.textContent = "🔊 Listen"; };
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+  speechSynthesis.resume();          // Chrome sometimes starts paused
+  speaking = true; btn.textContent = "⏹ Stop";
+}
+
+// ---------- reminders (browser notifications for due cards) ----------
+async function enableReminders() {
+  if (!("Notification" in window)) { alert("This browser doesn't support notifications."); return; }
+  const perm = await Notification.requestPermission();
+  if (perm === "granted") checkReminders(true);
+  else alert("Notifications are blocked — enable them in your browser's site settings.");
+}
+async function checkReminders(force) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    const d = await (await authFetch(API + "/stats")).json();
+    if (d.due_today > 0) new Notification("AskMyNotes", { body: `📚 You have ${d.due_today} flashcards due for review.` });
+    else if (force) new Notification("AskMyNotes", { body: "🎉 All caught up — nothing due right now." });
+  } catch (e) { /* ignore */ }
+}
+
+// tiny markdown: **bold**, - bullets, newlines
+function mdLite(t) {
+  return t.replace(/&/g,"&amp;").replace(/</g,"&lt;")
+          .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
+          .replace(/^\s*[-*]\s+(.*)$/gm,"• $1")
+          .replace(/\n/g,"<br>");
+}
+
+// detect key by probing an AI endpoint cheaply on load
+async function detectKey() {
+  try {
+    const res = await authFetch(API + "/quiz", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ num:1 }) });
+    // 400 with the key message => no key; anything else (incl. "no notes") => key present
+    if (res.status === 400) {
+      const d = await res.json();
+      hasKey = !(d.detail || "").includes("needs an API key");
+    } else { hasKey = true; }
+  } catch { hasKey = false; }
+  checkKey();
+}
+
+// PWA: register the service worker so the app is installable / works offline-ish
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
+// boot: show the app if we already have a valid session, else the login screen
+if (token()) showApp();
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+sqlalchemy
+python-multipart
+python-dotenv
+pymupdf
+easyocr
+python-docx
+sentence-transformers
+numpy
+anthropic
+google-genai
+groq
+PyJWT
+bcrypt

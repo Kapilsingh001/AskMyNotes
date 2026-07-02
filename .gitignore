@@ -1,0 +1,19 @@
+# --- secrets: NEVER commit your API keys ---
+.env
+
+# --- python ---
+venv/
+__pycache__/
+*.py[cod]
+
+# --- local data ---
+notes.db
+*.db
+
+# --- model caches (downloaded at runtime) ---
+.cache/
+
+# --- local tooling / editor ---
+.claude/
+.vscode/
+.idea/

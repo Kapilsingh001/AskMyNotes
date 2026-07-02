@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#8b5cf6" />
+<title>Shared deck — AskMyNotes</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --accent:#8b5cf6; --accent2:#6d28d9;
+          --text:#e2e8f0; --muted:#94a3b8; --border:#334155;
+          --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:20px; text-align:center; border-bottom:1px solid var(--border); }
+  header h1 { margin:0 0 4px; font-size:20px; } header p { margin:0; color:var(--muted); font-size:13px; }
+  .wrap { max-width:640px; margin:26px auto; padding:0 16px 60px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:22px; }
+  .badge { display:inline-block; background:var(--accent2); color:#fff; font-size:11px; padding:2px 8px;
+    border-radius:999px; margin:0 6px 8px 0; }
+  .face { min-height:110px; display:flex; align-items:center; justify-content:center; text-align:center;
+    font-size:18px; line-height:1.5; padding:14px; }
+  .answer { background:#0b1220; border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-top:12px; }
+  button { padding:10px 16px; background:var(--accent); color:#fff; border:none; border-radius:8px;
+    font-weight:600; cursor:pointer; margin-top:12px; } button:hover { background:var(--accent2); }
+  button.ghost { background:transparent; border:1px solid var(--border); color:var(--text); }
+  .nav { display:flex; justify-content:space-between; gap:10px; margin-top:14px; }
+  .cite { color:var(--accent); font-weight:600; } .hidden { display:none; }
+  code, strong { color:#fff; } a { color:var(--accent); }
+  .foot { text-align:center; margin-top:22px; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧠 <span id="title">Shared deck</span></h1>
+  <p id="sub">Flashcards shared via AskMyNotes — read-only</p>
+</header>
+<div class="wrap">
+  <div class="card" id="deckCard">
+    <div id="meta"></div>
+    <div class="face" id="face">Loading…</div>
+    <div class="answer hidden" id="answer"></div>
+    <button id="flip" onclick="flip()">Show answer</button>
+    <div class="nav">
+      <button class="ghost" onclick="move(-1)">← Prev</button>
+      <span id="counter" style="align-self:center;color:var(--muted)"></span>
+      <button class="ghost" onclick="move(1)">Next →</button>
+    </div>
+  </div>
+  <div class="foot">Made with <a href="/">AskMyNotes</a> — turn your own notes into decks like this.</div>
+</div>
+<script>
+const token = location.pathname.split("/").pop();
+let cards = [], i = 0, shown = false;
+
+function md(t){ return (t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;")
+  .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
+  .replace(/`([^`]+)`/g,"<code>$1</code>")
+  .replace(/^\s*[-*]\s+(.*)$/gm,"• $1").replace(/\n/g,"<br>"); }
+
+async function load(){
+  try {
+    const res = await fetch("/api/shared/" + token);
+    const d = await res.json();
+    if(!res.ok){ document.getElementById("deckCard").innerHTML = "❌ " + (d.detail||"Not found"); return; }
+    document.getElementById("title").textContent = d.title;
+    document.getElementById("sub").textContent = `${d.subject} · ${d.cards.length} cards · read-only`;
+    cards = d.cards;
+    if(!cards.length){ document.getElementById("deckCard").innerHTML = "This deck has no cards yet."; return; }
+    render();
+  } catch(e){ document.getElementById("deckCard").innerHTML = "❌ " + e; }
+}
+function render(){
+  const c = cards[i]; shown = false;
+  const colors = { Easy:"#22c55e", Medium:"#f59e0b", Hard:"#ef4444" };
+  let meta = "";
+  if(c.topic) meta += `<span class="badge">${c.topic}</span>`;
+  if(c.difficulty) meta += `<span class="badge" style="background:${colors[c.difficulty]||'#6d28d9'}">${c.difficulty}</span>`;
+  document.getElementById("meta").innerHTML = meta;
+  document.getElementById("face").innerHTML = md(c.front);
+  document.getElementById("answer").classList.add("hidden");
+  document.getElementById("flip").classList.remove("hidden");
+  document.getElementById("counter").textContent = `${i+1} / ${cards.length}`;
+}
+function flip(){
+  document.getElementById("answer").innerHTML = '<span class="cite">Answer</span><br>' + md(cards[i].back);
+  document.getElementById("answer").classList.remove("hidden");
+  document.getElementById("flip").classList.add("hidden");
+}
+function move(step){ i = (i + step + cards.length) % cards.length; render(); }
+load();
+</script>
+</body>
+</html>
